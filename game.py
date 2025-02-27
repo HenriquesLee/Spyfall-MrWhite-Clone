@@ -46,7 +46,7 @@ def generate_word_with_gemini(api_key):
                 {
                     "parts": [
                         {
-                            "text": "Generate a single random word that can be used as a location or concept for a social deduction game like 'Spyfall'. The word should be a common noun that most people would recognize. Just return the word and nothing else. Examples: Airport, Hospital, Restaurant, Wedding, University, Casino, etc."
+                            "text": "Generate a single random word that can be used as a location or concept for a social deduction game like 'Spyfall'. The word should be a common noun that most people would recognize. Just return the word and nothing else."
                         }
                     ]
                 }
