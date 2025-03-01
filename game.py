@@ -1,8 +1,8 @@
 import streamlit as st
 import random
 import time
-import requests
 import json
+from google import genai
 
 # Initialize session state variables if they don't exist
 if 'game_started' not in st.session_state:
@@ -24,51 +24,37 @@ if 'scores' not in st.session_state:
 if 'mr_white_won_last' not in st.session_state:
     st.session_state.mr_white_won_last = False
 if 'api_key' not in st.session_state:
-    st.session_state.api_key = ""
+    st.session_state.api_key = "YOUR_API_KEY_HERE"  # Replace with your actual API key
 if 'generated_words' not in st.session_state:
     st.session_state.generated_words = []
 
 # Function to generate a word using Gemini API
 def generate_word_with_gemini(api_key):
-    if not api_key:
-        st.error("Please enter your Gemini API key")
-        return None
-        
     try:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
-        headers = {
-            "Content-Type": "application/json"
-        }
+        # Set up the Gemini client with direct API key
+        client = genai.Client(api_key=api_key)
         
         # Craft the prompt for Gemini to generate a single word for the game
-        data = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": "Generate a single random word that can be used as a location or concept for a social deduction game like 'Spyfall'. The word should be a common noun that most people would recognize. Just return the word and nothing else."
-                        }
-                    ]
-                }
-            ]
-        }
+        prompt = "Generate a single random word that can be used as a location or concept for a social deduction game like 'Spyfall'. The word should be a common noun that most people would recognize. Just return the word and nothing else. Examples: Airport, Hospital, Restaurant, Wedding, University, Casino, etc."
         
-        response = requests.post(f"{url}?key={api_key}", headers=headers, data=json.dumps(data))
+        # Generate content using the correct method
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt
+        )
         
-        if response.status_code == 200:
-            response_data = response.json()
-            if 'candidates' in response_data and len(response_data['candidates']) > 0:
-                if 'content' in response_data['candidates'][0]:
-                    content = response_data['candidates'][0]['content']
-                    if 'parts' in content and len(content['parts']) > 0:
-                        word = content['parts'][0]['text'].strip()
-                        # If the response has multiple words or punctuation, clean it to get just one word
-                        if ' ' in word or '\n' in word:
-                            word = word.split()[0].strip('.,!?;:')
-                        return word
+        # Extract the word from the response
+        if response and hasattr(response, 'text'):
+            word = response.text.strip()
+            # If the response has multiple words or punctuation, clean it to get just one word
+            if ' ' in word or '\n' in word:
+                word = word.split()[0].strip('.,!?;:')
+            return word
         
-        st.error(f"Error generating word: {response.text}")
-        return "Restaurant"  # Fallback word
+        # Print the error for debugging
+        st.error("Error generating word: Unable to parse response")
+        # As a fallback, provide a default word
+        return "Restaurant"
     
     except Exception as e:
         st.error(f"Error when calling Gemini API: {str(e)}")
@@ -163,6 +149,18 @@ def generate_multiple_words(api_key, count=5):
             words.append(word)
     return words
 
+# Function to use a custom word list as fallback
+def get_fallback_word():
+    fallback_words = [
+        "Airport", "Beach", "Casino", "School", "Hospital", "Library", 
+        "Restaurant", "Zoo", "Bank", "Movie Theater", "Coffee Shop",
+        "Gym", "Supermarket", "Museum", "Concert", "Park", "Hotel",
+        "Farm", "Office", "Prison", "Wedding", "Circus", "Submarine",
+        "Spaceship", "Train Station", "Police Station", "University",
+        "Bakery", "Factory", "Nightclub", "Cruise Ship", "Art Gallery"
+    ]
+    return random.choice(fallback_words)
+
 # Main app layout
 st.title("🕵️ Mr. White Game")
 
@@ -170,26 +168,54 @@ st.title("🕵️ Mr. White Game")
 with st.sidebar:
     st.header("Game Settings")
     
-    # Gemini API key input
-    st.subheader("Gemini API Key")
-    api_key = st.text_input("Enter your Gemini API key:", type="password", value=st.session_state.api_key)
+    # Gemini API key input (commented out as per request to use backend API key)
+    # st.subheader("Gemini API Key")
+    # api_key = st.text_input("Enter your Gemini API key:", type="password", value=st.session_state.api_key)
     
-    if api_key != st.session_state.api_key:
-        st.session_state.api_key = api_key
-        st.session_state.generated_words = []  # Clear any previously generated words
+    # if api_key != st.session_state.api_key:
+    #     st.session_state.api_key = api_key
+    #     st.session_state.generated_words = []  # Clear any previously generated words
+    
+    # API Configuration help
+    with st.expander("API Help"):
+        st.write("""
+        **Having trouble with the API?**
+        
+        1. API key is configured in the backend
+        2. If you get an error, try using a fallback word instead
+        3. You can test the API by clicking the "Test API" button below
+        """)
+        
+        if st.button("Test API"):
+            with st.spinner("Testing API..."):
+                test_word = generate_word_with_gemini(st.session_state.api_key)
+                if test_word:
+                    st.success(f"API working! Generated word: {test_word}")
+                else:
+                    st.error("API test failed. Using fallback words instead.")
     
     # Pre-generate words button
-    if st.session_state.api_key:
-        if st.button("Pre-generate 5 words"):
-            with st.spinner("Generating words..."):
-                words = generate_multiple_words(st.session_state.api_key, 5)
-                if words:
-                    st.session_state.generated_words.extend(words)
-                    st.success(f"Generated {len(words)} words for upcoming games!")
-        
-        # Show number of pre-generated words
-        if st.session_state.generated_words:
-            st.write(f"Pre-generated words available: {len(st.session_state.generated_words)}")
+    if st.button("Pre-generate 5 words"):
+        with st.spinner("Generating words..."):
+            words = generate_multiple_words(st.session_state.api_key, 5)
+            if words:
+                st.session_state.generated_words.extend(words)
+                st.success(f"Generated {len(words)} words for upcoming games!")
+            else:
+                st.error("Failed to generate words. Using fallback words instead.")
+                for _ in range(5):
+                    st.session_state.generated_words.append(get_fallback_word())
+                st.warning(f"Added {5} fallback words instead.")
+    
+    # Show number of pre-generated words
+    if st.session_state.generated_words:
+        st.write(f"Pre-generated words available: {len(st.session_state.generated_words)}")
+    
+    # Fallback word button
+    if st.button("Use Fallback Words"):
+        for _ in range(5):
+            st.session_state.generated_words.append(get_fallback_word())
+        st.success(f"Added 5 fallback words!")
     
     # Scoreboard
     st.subheader("Scoreboard")
@@ -207,10 +233,6 @@ with st.sidebar:
 # Main game area
 if not st.session_state.game_started:
     st.header("Game Setup")
-    
-    # API key warning
-    if not st.session_state.api_key:
-        st.warning("Please enter your Gemini API key in the sidebar to generate random words.")
     
     # Player management
     st.subheader("Players")
@@ -237,12 +259,26 @@ if not st.session_state.game_started:
             st.error("Please enter a valid player name that isn't already added.")
     
     # Start game button
-    start_disabled = len(st.session_state.players) < 3 or not st.session_state.api_key
-    start_help = "You need at least 3 players and a Gemini API key to start."
+    start_disabled = len(st.session_state.players) < 3
+    start_help = "You need at least 3 players to start."
     
     if st.button("Start Game", disabled=start_disabled, help=start_help):
-        start_game()
-        st.rerun()
+        if not st.session_state.generated_words:
+            # Use the API to generate a word directly
+            word = generate_word_with_gemini(st.session_state.api_key)
+            if not word:
+                # Fallback if API fails
+                word = get_fallback_word()
+            st.session_state.word = word
+            st.session_state.game_started = True
+            st.session_state.eliminated_players = []
+            st.session_state.round_number = 1
+            st.session_state.current_phase = "card_reveal"
+            st.session_state.mr_white_index = random.randint(0, len(st.session_state.players) - 1)
+            st.rerun()
+        else:
+            start_game()
+            st.rerun()
 else:
     # Display game information
     st.header(f"Round {st.session_state.round_number}")
@@ -330,11 +366,13 @@ else:
             st.write(f"Mr. White was: {st.session_state.players[st.session_state.mr_white_index]}")
         
         # Generate next word in advance
-        if len(st.session_state.generated_words) < 3 and st.session_state.api_key:
-            with st.spinner("Generating word for next game..."):
+        if len(st.session_state.generated_words) < 3:
+            with st.spinner("Preparing for next game..."):
                 word = generate_word_with_gemini(st.session_state.api_key)
-                if word:
-                    st.session_state.generated_words.append(word)
+                if not word:
+                    # Use fallback if API fails
+                    word = get_fallback_word()
+                st.session_state.generated_words.append(word)
         
         # Start a new game
         if st.button("Start a New Game"):
